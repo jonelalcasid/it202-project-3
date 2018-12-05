@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width">
+	<title>Clark's IT202-Project3</title>
+	<link rel="stylesheet" href="https://unpkg.com/material-components-web@latest/dist/material-components-web.min.css">
+	<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">    <style>
+      /* Always set the map height explicitly to define the size of the div
+       * element that contains the map. */
+      #map {
+        height: 50%;
+      }
+      /* Optional: Makes the sample page fill the window. */
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+  <div style="display:block;">
+    <ul class="mdc-list mdc-list--two-line" aria-orientation="vertical" id="listData" data-mdc-auto-init="MDCList"></ul>
+  </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+		<script src="https://unpkg.com/material-components-web@latest/dist/material-components-web.min.js"></script>
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <script>
+      var map;
+      var markers = [];
+      var chicago = {lat: 41.8781, lng: -87.6298};
+      var db = new Dexie("favorite");
+      var favoriteCount = 0;
+      db.version(1).stores({
+          library: 'name,address,gps'
+      });
+      function insert(table, name, address){
+        db[table].put({"name": name, "address": address}).then (function(){
+            //
+            // Then when data is stored, read from it
+            //
+            return db[table].get(name);
+        }).then(function (thisLibrary) {
+            //
+            // Display the result
+            //
+            //alert (thisLibrary.name + " is stored");
+        }).catch(function(error) {
+            //
+            // Finally don't forget to catch any error
+            // that could have happened anywhere in the
+            // code blocks above.
+            //
+            alert ("Ooops: " + error);
+        });
+      }
+      function mapVisibility(){
+        if (favoriteCount > 0){
+          $("#map").slideDown();
+        }
+        else{
+          $("#map").slideUp();
+        }
+      }
+      function refreshMap(table){
+        db[table].toArray(function (array){
+          deleteMarkers();
+          favoriteCount = 0;
+          for (var key in array){
+            $("#"+$.escapeSelector(array[key].name)).html("favorite");
+            var gps = $("#"+$.escapeSelector(array[key].name)).attr("gps");
+            var mapid = $("#"+$.escapeSelector(array[key].name)).attr("mapid");
+            favoriteCount++;
+            addMarker(strToGPS(gps), array[key].name);
+          }
+          mapVisibility();
+          clearMarkers();
+          showMarkers();
+        });
+      }
+      function del(table, name){
+        db[table].delete(name).then(function (thisLibrary) {
+            //
+            // Display the result
+            //
+            //alert (name + " is deleted");
+        }).catch(function(error) {
+            //
+            // Finally don't forget to catch any error
+            // that could have happened anywhere in the
+            // code blocks above.
+            //
+            alert ("Ooops: " + error);
+        });
+      }
+      function favoriteSwitch(val, name, address){
+        if (val == "favorite_border"){
+          insert("library", name, address);
+          refreshMap("library");
+          return "favorite";
+        }
+        else{
+          del("library", name);
+          refreshMap("library");
+          return "favorite_border";
+        }
+      }
+      function initMap(){
+        map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 10,
+          center: chicago,
+          mapTypeId: 'satellite'
+        });
+        $("#map").hide();
+      }
+      $(document).ready(function () {
+        
+        
+        window.mdc.autoInit();
+        $.get("https://data.cityofchicago.org/resource/psqp-6rmg.json", function(data){
+          var result = "";
+          var dataCount = 0;
+          var counter = 0;
+          for (var key in data){
+            var icon = "favorite_border";
+            result+=`
+              <li class="mdc-list-item" tabindex="-1">
+                
+                <span class="mdc-list-item__text">
+                  <span class="mdc-list-item__primary-text">`+data[key]["name_"]+`</span>
+                  <span class="mdc-list-item__secondary-text">`+data[key]["address"]+` `+data[key]["city"]+`, `+data[key]["state"]+` `+data[key]["zip"]+`</span>
+                </span>
+                <span id="`+data[key]["name_"]+`" gps="`+data[key]['location']['coordinates']+`" mapid="`+(counter++)+`" class="mdc-list-item__meta material-icons" aria-hidden="true">`+icon+`</span>
+              </li>
+            `;
+          }
+          $("#listData").html(result);
+          refreshMap("library");
+          
+        })
+        $("body").on("click", ".mdc-list-item", function(){
+          var name = $(".mdc-list-item__primary-text",this).html();
+          var address = $(".mdc-list-item__secondary-text",this).html();
+          $(".material-icons", this).html(favoriteSwitch($(".material-icons", this).html(), name, address));
+        });
+      
+      })
+      // Adds a marker to the map and push to the array.
+      function addMarker(location, name="") {
+        var marker = new google.maps.Marker({
+          position: location,
+          map: map,
+          title: name
+        });
+        markers.push(marker);
+      }
+      // Sets the map on all markers in the array.
+      function setMapOnAll(map) {
+        for (var i = 0; i < markers.length; i++) {
+          markers[i].setMap(map);
+        }
+      }
+      // Removes the markers from the map, but keeps them in the array.
+      function clearMarkers() {
+        setMapOnAll(null);
+      }
+      // Shows any markers currently in the array.
+      function showMarkers() {
+        setMapOnAll(map);
+      }
+      // Deletes all markers in the array by removing references to them.
+      function deleteMarkers() {
+        clearMarkers();
+        markers = [];
+      }
+      function strToGPS(strGPS){
+        var latlngStr = strGPS.split(",", 2);
+        var lng = parseFloat(latlngStr[0]);
+        var lat = parseFloat(latlngStr[1]);
+        return new google.maps.LatLng(lat, lng);
+      }
+    </script>
+    
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDnztOw5ZoKk4Vq5YQl70YQBGFDOOH60xk&callback=initMap">
+    </script>
+  </body>
+</html>
